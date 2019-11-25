@@ -1,0 +1,211 @@
+---
+title: "Solution for intro session on BDA"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(viridis)
+```
+
+## Exercice 1: Working with likelihood
+
+In R, the likelihood is given by the *dxxx* functions, see [Distributions](https://stat.ethz.ch/R-manual/R-devel/library/stats/html/Distributions.html) for a list of statistical distributions available from base package. Many more are implemented in other [packages](https://cran.r-project.org/web/views/Distributions.html).
+
+### Ex 1a: Deer in one forest
+
+You got data on deer abundance of a nearby forest, the technicians counted **15** adult female deers. 
+
+Draw the likelihood curve for different $\lambda$ (between 0 and 50) based on a Poisson distribution: 
+
+```{r}
+curve(dpois(15, x), from = 0, to = 50)
+```
+
+### Ex 1b: Deer in many forests
+
+Later on, data on 9 other similar forests are given to you, compute the negative summed log-likelihood for different $\lambda$ values between 0 and 50:
+
+```{r}
+deer <- c(15, 12, 25, 30, 13, 14, 10, 17, 15, 22)
+
+negLL <- function(x){
+  -sum(dpois(deer, x, log = TRUE))
+}
+
+curve(sapply(x,negLL), from = 0, to = 50)
+```
+
+### Ex1c: Cats hearts are sooo big
+
+Load the **cats** dataset from the **MASS** package, the column *Hwt* represent the weight of the hearts of 144 cats. Given the right skew in the distribution (do some histogramm / density plot), the gamma distribution is a natural choice. The gamma distribution has two parameters: (i) the shape and (ii) the scale. Derive the summed log-likelihood for shape values between 1 and 40 and for scale values between 0.01 and 1, plot the result.
+
+```{r}
+library(MASS)
+data(cats)
+
+grid_p <- expand.grid(shape = seq(1, 40, length.out = 20), scale = seq(0.01, 1, length.out = 20))
+
+grid_p$negLL <- apply(grid_p, 1, function(x) -sum(dgamma(cats$Hwt, shape = x[1], scale = x[2], log = TRUE)))
+
+ggplot(grid_p, aes(x = shape, y = scale, fill = log10(negLL))) +
+  geom_raster(interpolate = TRUE) +
+  scale_fill_viridis(direction = -1) +
+  geom_contour(aes(z=log10(negLL)))
+
+```
+
+
+
+## Fit your first Bayesian model
+
+Load the _toy_dataset.csv_ file into R and the rstanarm library:
+
+```{r}
+library(rstanarm)
+library(bayesplot)
+
+dat <- read.csv("../data/toy_dataset.csv")
+
+```
+
+This dataset has 200 observations 4 columns with the following infos:
+
+* height: plant height in cm
+* plot_id: the 20 plots where plant height was measured
+* treatment: a letter coding one of the four treatment applied to the plant
+* temperature: soil temperature next to the plant
+
+Given that we assume plots to differ in the average plant height we can fit a random-intercept model, using the **stan_glmer** function:
+
+```{r message=FALSE}
+m_full <- stan_glmer(height ~ temperature * treatment + (1|plot_id), data = dat)
+```
+
+We can get the model estimates:
+
+```{r}
+summary(m_full)
+```
+
+We can also see the prior used to fit the model:
+
+```{r}
+prior_summary(m_full)
+```
+
+A couple of nice helper functions
+
+```{r}
+# get R square
+quantile(bayes_R2(m_full), probs = c(0.1, 0.5, 0.9))
+
+# get credible intervals
+posterior_interval(m_full, pars = "temperature")
+
+# get trace plots
+plot(m_full, plotfun = "trace", pars = "temperature")
+
+# plot posterior density
+pp <- plot(m_full, plotfun = "mcmc_dens", pars = "temperature")
+pp + 
+  labs(title = "Posterior density for the temperature slope")
+
+```
+
+
+## Exercice 2: playing with rstanarm prior and exploring sample size effects
+
+### Ex 2a:
+
+Plot the default prior distributions for the intercept and the temperature slope.
+
+```{r}
+par(mfrow=c(1,2))
+curve(dnorm(x,0,38), from = -10, to = 10)
+curve(dnorm(x,0, 8.8), from = -10, 10)
+```
+
+### Ex 2b: changing priors
+
+Put a cauchy(0, 2.5) prior on the slopes, leaving the other prior distribution as is
+
+```{r}
+my_prior <- cauchy(0, 2.5, autoscale = FALSE)
+m_prior <- update(m_full, prior = my_prior)
+
+# check
+prior_summary(m_prior)
+```
+
+
+### Ex 2c: exploring sample size impact on posterior distributions
+
+Re-fit the same model but with smaller sample sizes, randomly pick 20, 50 amd 100 row index and fit the model to the reduced subset of the data. Plot and compare the posterior distributions for the slope of the temperature effect. 
+
+```{r message=FALSE}
+# fit the model to 20 random data points
+m_20 <- stan_glmer(height ~ temperature * treatment + (1|plot_id), data= dat[sample(1:nrow(dat), 20),])
+
+# fit the model to 50 random data points
+m_50 <- stan_glmer(height ~ temperature * treatment + (1|plot_id), data= dat[sample(1:nrow(dat), 50),])
+
+# fit the model to 100 random data points
+m_100 <- stan_glmer(height ~ temperature * treatment + (1|plot_id), data= dat[sample(1:nrow(dat), 100),])
+
+# extract and put together the posterior draws for the temperature slope
+pp_x1 <- data.frame(size = rep(c(20,50,100,nrow(dat)), each = 4000),
+                    post = c(as.matrix(m_20)[,2],
+                             as.matrix(m_50)[,2],
+                             as.matrix(m_100)[,2],
+                             as.matrix(m_full)[,2]))
+ggplot(pp_x1, aes(x=post, color=factor(size))) +
+  geom_density()
+
+```
+
+
+## Checking model fit
+
+1. Did the model converge?
+
+  * Visually check trace plots
+  
+  
+```{r}
+plot(m_full, plotfun = "trace", pars = names(fixef(m_full)))
+```
+  
+  * Look at Rhat values, Rhat = 1 means convergence
+  
+```{r}
+rhat(m_full)
+```
+
+2. Look at posterior predictive distribution
+
+```{r}
+pp <- pp_check(m_full, nreps = 100)
+pp +
+  labs(title= "Posterior predictive checks for 100 draws from the posterior distribution")
+
+```
+
+## Exercices 3: checking model fit
+
+Load the test_dataset.csv in R and find a good model for it!
+
+```{r message=FALSE}
+testdat <- read.csv("../data/test_dataset.csv")
+
+# the model
+m_right <- stan_glm(bird ~ temperature + I(temperature^2), family = poisson,
+                    data = testdat)
+
+# checks
+plot(m_right, plotfun = "trace")
+rhat(m_right)
+pp_check(m_right)
+```
+

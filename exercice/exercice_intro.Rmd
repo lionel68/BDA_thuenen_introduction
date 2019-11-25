@@ -1,0 +1,160 @@
+---
+title: "Exercice for intro session on BDA"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Exercice 1: Working with likelihood
+
+In R, the likelihood is given by the *dxxx* functions, see [Distributions](https://stat.ethz.ch/R-manual/R-devel/library/stats/html/Distributions.html) for a list of statistical distributions available from base package. Many more are implemented in other [packages](https://cran.r-project.org/web/views/Distributions.html).
+
+### Ex 1a: Deer in one forest
+
+You got data on deer abundance of a nearby forest, the technicians counted **15** adult female deers. 
+
+Draw the likelihood curve for different $\lambda$ (between 0 and 50) based on a Poisson distribution: 
+
+```{r}
+
+```
+
+### Ex 1b: Deer in many forests
+
+Later on, data on 9 other similar forests are given to you, compute the negative summed log-likelihood for different $\lambda$ values between 0 and 50:
+
+```{r}
+
+```
+
+### Ex1c: Cats hearts are sooo big
+
+Load the **cats** dataset from the **MASS** package, the column *Hwt* represent the weight of the hearts of 144 cats. Given the right skew in the distribution (do some histogramm / density plot), the gamma distribution is a natural choice. The gamma distribution has two parameters: (i) the shape and (ii) the scale. Derive the summed log-likelihood for shape values between 1 and 40 and for scale values between 0.01 and 1, plot the result.
+
+```{r}
+
+```
+
+
+
+## Fit your first Bayesian model
+
+Load the _toy_dataset.csv_ file into R and the rstanarm library:
+
+```{r}
+library(rstanarm)
+library(bayesplot)
+
+dat <- read.csv("../data/toy_dataset.csv")
+
+```
+
+This dataset has 200 observations 4 columns with the following infos:
+
+* height: plant height in cm
+* plot_id: the 20 plots where plant height was measured
+* treatment: a letter coding one of the four treatment applied to the plant
+* temperature: soil temperature next to the plant
+
+Given that we assume plots to differ in the average plant height we can fit a random-intercept model, using the **stan_glmer** function:
+
+```{r}
+m_full <- stan_glmer(height ~ temperature * treatment + (1|plot_id), data = dat)
+```
+
+We can get the model estimates:
+
+```{r}
+summary(m_full)
+```
+
+We can also see the prior used to fit the model:
+
+```{r}
+prior_summary(m_full)
+```
+
+A couple of nice helper functions
+
+```{r}
+# get R square
+quantile(bayes_R2(m_full), probs = c(0.1, 0.5, 0.9))
+
+# get credible intervals
+posterior_interval(m_full, pars = "temperature")
+
+# get trace plots
+plot(m_full, plotfun = "trace", pars = "temperature")
+
+# plot posterior density
+pp <- plot(m_full, plotfun = "mcmc_dens", pars = "temperature")
+pp + 
+  labs(title = "Posterior density for the temperature slope")
+
+```
+
+
+## Exercice 2: playing with rstanarm prior and exploring sample size effects
+
+### Ex 2a:
+
+Plot the default prior distributions for the intercept and the temperature slope.
+
+```{r}
+
+```
+
+### Ex 2b: changing priors
+
+Put a cauchy(0, 2.5) prior on the slopes, leaving the other prior distribution as is
+
+```{r}
+
+```
+
+
+### Ex 2c: exploring sample size impact on posterior distributions
+
+Re-fit the same model but with smaller sample sizes, randomly pick 20, 50 amd 100 row index and fit the model to the reduced subset of the data. Plot and compare the posterior distributions for the slope of the temperature effect. 
+
+```{r}
+
+```
+
+
+## Checking model fit
+
+1. Did the model converge?
+
+  * Visually check trace plots
+  
+  
+```{r}
+plot(m_full, plotfun = "trace", pars = names(fixef(m_full)))
+```
+  
+  * Look at Rhat values, Rhat = 1 means convergence
+  
+```{r}
+rhat(m_full)
+```
+
+2. Look at posterior predictive distribution
+
+```{r}
+pp <- pp_check(m_full, nreps = 100)
+pp +
+  labs(title= "Posterior predictive checks for 100 draws from the posterior distribution")
+
+```
+
+## Exercices 3: checking model fit
+
+Load the test_dataset.csv in R and find a good model for the bird column!
+
+```{r}
+
+```
+
