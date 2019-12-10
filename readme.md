@@ -6,6 +6,7 @@ To make the most of the coding session please come to the workshop with the foll
 
 * rstanarm (v2.19 or higher)
 * bayesplot (v1.7 or higher)
+* brms (v2.10 or higher)
 * ggplot2
 * MASS
 
@@ -18,9 +19,15 @@ stan_glm(mpg ~ cyl,family="gaussian",data=mtcars)
 
 ## Structure of the workshop
 
+On the 27.11.2019;
+
 * Presentation giving introductory materials to Bayesian Data Analysis
 * Code examples on fitting and checking Stan models (using rstanarm)
 * Exercices to explore likelihood distributions, model fitting and model checking
+
+On the 11.12.2019:
+
+* Code demo and exercices to fit: (i) mixed-effect models, (ii) varying-variance models and (iii) temporal autocorrelation models
 
 ## Reading suggestions
 
