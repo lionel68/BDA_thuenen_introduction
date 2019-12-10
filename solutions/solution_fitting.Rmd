@@ -1,0 +1,232 @@
+---
+title: "Solution for fitting session on BDA"
+output: html_document
+---
+
+```{r setup, include=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(MASS)
+library(rstanarm)
+library(brms)
+```
+
+## Case 1: fitting mixed effect models with rstanarm
+
+### Code demo
+
+```{r}
+# load the dataset
+dat <- read.csv("../data/fitting_01.csv")
+
+
+# first model
+m_1 <- stan_lmer(height ~ rain + (1 | grp), dat)
+
+# summary
+summary(m_1)
+
+# check priors
+prior_summary(m_1)
+
+# check convergence
+plot(m_1, plotfun = "trace", pars = c("(Intercept)", "rain", "sigma", "Sigma[grp:(Intercept),(Intercept)]"))
+rhat(m_1)
+
+# make pp_check
+pp_check(m_1, nreps = 25)
+
+# plot the predicted regression lines
+newdat <- expand.grid(rain = seq(-2, 2, length.out = 10), grp = letters[1:n_grp])
+
+pred <- posterior_predict(m_1, newdata = newdat)
+## get median and 90 CrI
+pred_sum <- apply(pred, 2, function(x) quantile(x, probs = c(0.05, 0.5, 0.95)))
+newdat$height <- pred_sum[2,]
+newdat$LCI <- pred_sum[1,]
+newdat$UCI <- pred_sum[3,]
+
+# plot
+ggplot(newdat, aes(x=rain,y=height,ymin=LCI,ymax=UCI, group = grp)) +
+  geom_ribbon(aes(fill=grp), alpha = 0.1) +
+  geom_path(aes(color=grp)) 
+
+# get R2 and loo
+quantile(bayes_R2(m_1), probs = c(0.5))
+
+ll_1 <- loo(m_1)
+
+# a better plot
+ggplot(newdat, aes(x=rain,y=height, group = grp)) +
+  geom_ribbon(aes(fill=grp, ymin=LCI,ymax=UCI), alpha = 0.1) +
+  geom_path(aes(color=grp)) +
+  geom_point(data=dat, aes(color = grp))
+
+```
+
+### Exercices
+
+Fit a random slope model to the data and extract:
+
+- convergence checks
+- posterior predictive checks
+- plot of predicted regression lines with 80% Credible interval
+- compare this model to the previous one using LOO and R2
+
+```{r}
+m_2 <- stan_lmer(height ~ rain + (1 + rain | grp), dat)
+
+# model summary
+summary(m_2)
+
+# rhat
+which(rhat(m_2) > 1.1) # all good
+
+# posterior predictive checks
+pp_check(m_2, nreps = 25) # seems better than first model
+
+# plot the predicted regression lines
+newdat <- expand.grid(rain = seq(-2, 2, length.out = 10), grp = letters[1:n_grp])
+
+pred <- posterior_predict(m_2, newdata = newdat)
+## get median and 90 CrI
+pred_sum <- apply(pred, 2, function(x) quantile(x, probs = c(0.1, 0.5, 0.9)))
+newdat$height <- pred_sum[2,]
+newdat$LCI <- pred_sum[1,]
+newdat$UCI <- pred_sum[3,]
+
+ggplot(newdat, aes(x=rain,y=height, group = grp)) +
+  geom_ribbon(aes(fill=grp, ymin=LCI,ymax=UCI), alpha = 0.1) +
+  geom_path(aes(color=grp)) +
+  geom_point(data=dat, aes(color = grp)) # much better
+
+# get R2 and LOO
+median(bayes_R2(m_2))
+
+ll_2 <- loo(m_2)
+
+loo_compare(ll_1, ll_2) # varying slope model clearly better
+```
+
+For the advanced people:
+
+- remove the automatic scaling of the priors on the intercept, the slope and the deviations (sigma), compare the results to the other models
+- compute the posterior probability that the effect of rain is larger for group a than for group b
+- re-fit the model with uncorrelated random effects (check http://bbolker.github.io/mixedmodels-misc/glmmFAQ.html#model-specification)
+
+
+## Case 2: fitting varying variance model with brms
+
+### code demo
+
+```{r}
+# load the data
+dat_2 <- read.csv("../data/fitting_02.csv")
+
+# fit the model
+brm_form <- brmsformula(biomass ~ nutrient, sigma ~ nutrient)
+m_3 <- brm(brm_form, data = dat_2)
+
+# model summary
+summary(m_3)
+
+# check convergence
+plot(m_3)
+rhat(m_3)
+
+# check posterior predictive distribution
+brms::pp_check(m_3, type = "dens_overlay", nsamples = 25)
+
+# plot 
+mm <- marginal_effects(m_3, method = "predict")
+plot(mm, points = TRUE)
+```
+
+### Exercices
+
+- Identify the problem with the previous model and correct it in a new model
+- Run the usual model checks (convergence, posterior predictive distribution ...)
+- Plot the fitted regression line
+- Compare the two models
+
+```{r}
+brm_form4 <- brmsformula(biomass ~ nutrient, sigma ~ nutrient + I(nutrient ** 2))
+m_4 <- brm(brm_form4, dat_2)
+
+# model summary
+summary(m_4)
+
+# check convergence
+plot(m_4)
+rhat(m_4)
+
+# check posterior predictive distribution
+brms::pp_check(m_4, type = "dens_overlay", nsamples = 25)
+
+# plot 
+mm <- marginal_effects(m_4, method = "predict")
+plot(mm, points = TRUE)
+
+# derive loo for the two models and compare them
+brms::loo(m_3, m_4, reloo = TRUE) # model m_4 much better
+```
+
+For the advanced people
+
+- The previous plot show the prediction interval, make a plot with both the interval for the fitted slope and the prediction interval
+- Change the slope for the nutrient effect to a cauchy distribution with mean 0 and deviation of 2
+- Get the posterior probability that the variation at the both ends of the nutrient gradient are higher than in the middle of the gradient
+
+## Case 3: fitting temporal autocorrelation with brms
+
+```{r}
+# read the data
+dat_3 <- read.csv("../data/fitting_03.csv")
+# check for autocorrelation
+acf(dat_3$biomass)
+
+# fit the model
+m_5 <- brm(biomass ~ 1, data = dat_3, autocor = cor_ar(formula = ~ time, p = 1))
+
+# model summary
+summary(m_5)
+
+# model checks
+plot(m_5)
+rhat(m_5)
+
+# check posterior predictive distribution
+brms::pp_check(m_5, type = "dens_overlay", nsamples = 25)
+
+# plot fitted and predicted lines
+newdat <- expand.grid(time = 1:n_step) # a new dataframe to project the model predictions
+
+ff <- fitted(m_5, newdata = newdat) # the fitted (linear predictor) values from the model
+pp <- predict(m_5, newdata = newdat) # the model prediction (fitted values + residual variations)
+newdat <- cbind(newdat, pp, ff[,3:4])
+names(newdat)[c(2,4:7)] <- c("biomass", "p_lci", "p_uci", "f_lci", "f_uci")
+
+ggplot(newdat, aes(x = time, y = biomass)) +
+  geom_ribbon(aes(ymin = p_lci, ymax = p_uci), alpha = 0.1) +
+  geom_ribbon(aes(ymin = f_lci, ymax = f_uci), alpha = 0.1) +
+  geom_path() + geom_path(data = dat_3)
+```
+
+### Exercices 
+
+- Fit a model with a lag of 2
+- Run the usual checks
+- Compare with the previous model
+
+```{r}
+m_6 <- brm(biomass ~ 1, data = dat_3, autocor = cor_ar(formula = ~ time, p = 2))
+
+# usual checks ....
+
+# compare the models
+brms::loo(m_5, m_6) # little indication for th eneed to include a lag of 2
+
+```
+
+For the advanced people:
+
+- Feierabend !

@@ -18,7 +18,7 @@ You got data on deer abundance of a nearby forest, the technicians counted **15*
 Draw the likelihood curve for different $\lambda$ (between 0 and 50) based on a Poisson distribution: 
 
 ```{r}
-
+curve(dpois(15, x), from = 0, to =50)
 ```
 
 ### Ex 1b: Deer in many forests
@@ -26,6 +26,8 @@ Draw the likelihood curve for different $\lambda$ (between 0 and 50) based on a 
 Later on, data on 9 other similar forests are given to you, compute the negative summed log-likelihood for different $\lambda$ values between 0 and 50:
 
 ```{r}
+deer <- c(15, 12, 25, 30, 13, 14, 10, 17, 15, 22)
+
 
 ```
 
@@ -117,7 +119,7 @@ Put a cauchy(0, 2.5) prior on the slopes, leaving the other prior distribution a
 
 ### Ex 2c: exploring sample size impact on posterior distributions
 
-Re-fit the same model but with smaller sample sizes, randomly pick 20, 50 amd 100 row index and fit the model to the reduced subset of the data. Plot and compare the posterior distributions for the slope of the temperature effect. 
+Re-fit the same model but with smaller sample sizes, randomly pick 20, 50 and 100 row index and fit the model to the reduced subset of the data. Plot and compare the posterior distributions for the slope of the temperature effect. 
 
 ```{r}
 
